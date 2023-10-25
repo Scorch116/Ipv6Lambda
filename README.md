@@ -35,3 +35,28 @@ Instead of routing traffic from our subnet where Lambda is placed to a NAT Gatew
 A NAT Gatewayis primarily used for outbound IPv4 traffic from private subnets in your VPC, NAT Gateways do not support IPv6 traffic and are explicitly designed for IPv4 traffic.
 
 An Egress-Only Internet Gateway, is designed for IPv6 traffic. It allows IPv6-enabled resources in your VPC's subnets to initiate outbound connections to the IPv6 internet. 
+
+**Cloudformation Template**
+
+I have created a template that sets up a VPC, private subnet, and Lambda function with the ability to communicate over IPv6, I have attached a quick template summary below,
+
+Creates a VPC, an egress-only Internet Gateway, a private subnet, a custom route table, a security group, and a Lambda function.
+Associates the private subnet with the custom route table, ensuring that IPv6 traffic from the subnet is routed to the egress-only Internet Gateway.
+The Lambda function is configured to use IPv6 for dual-stack communication.
+The Lambda function code makes an HTTP request to "http://ipv6.google.com/" and logs the response.
+
+
+**Deploying Template**
+
+*Deploy in US-East-1 Region as the Layer is only suited for this region*, but please feel free to update the template to meet your requirements.
+
+You can either use the AWS CLI to deploy the template or simply download the template and upload the template manually via the cloudformation console.
+
+***Prerequisites***
+You need to have the AWS CLI installed and configured with your AWS credentials. 
+
+If you are creating a new stack, use the create-stack command:
+
+```
+aws cloudformation create-stack --stack-name YourStackName --template-body file://template.yaml
+```
