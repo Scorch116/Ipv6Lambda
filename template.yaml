@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create a VPC with a private subnet, egress-only Internet gateway, route table, security group, and a Lambda function with a Lambda layer in the private subnet
+
+Resources:
+  MyVPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+
+  IPv6CidrBlock:
+    Type: "AWS::EC2::VPCCidrBlock"
+    Properties:
+      AmazonProvidedIpv6CidrBlock: true
+      VpcId: !Ref MyVPC
+
+  EgressOnlyInternetGateway:
+    Type: "AWS::EC2::EgressOnlyInternetGateway"
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PrivateSubnet:
+    Type: "AWS::EC2::Subnet"
+    DependsOn: IPv6CidrBlock
+    Properties:
+      AssignIpv6AddressOnCreation: true
+      CidrBlock: !Select [0, !Cidr [!GetAtt MyVPC.CidrBlock, 1, 8]]
+      Ipv6CidrBlock: !Select [0, !Cidr [!Select [0, !GetAtt MyVPC.Ipv6CidrBlocks], 1, 64]]
+      VpcId: !Ref MyVPC
+
+  CustomPrivateRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref MyVPC
+
+  EgressOnlyRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: EgressOnlyInternetGateway
+    Properties:
+      RouteTableId: !Ref CustomPrivateRouteTable
+      DestinationIpv6CidrBlock: "::/0"
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+
+  PrivateSubnetRouteAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref CustomPrivateRouteTable
+
+  OpenSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Open to all traffic"
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: "-1"
+
+  LambdaExecutionRoleIpv6:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "LambdaExecutionRoleIpv6"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "LambdaExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "ec2:CreateNetworkInterface"
+                  - "ec2:DescribeNetworkInterfaces"
+                  - "ec2:DeleteNetworkInterface"
+                Resource: "*"
+
+  LambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "MyHelloWorldLambda"
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRoleIpv6.Arn
+      Code:
+        ZipFile: |
+          import json
+          import requests
+
+
+          def handler(event, context):
+              # TODO implement
+
+
+              url = "http://ipv6.google.com/"  # Replace with the IPv6 address you want to request
+              
+              try:
+                  response = requests.get(url)
+                  
+                  if response.status_code == 200:
+                      print("Request was successful.")
+                      print("Response content:")
+                      print(response.text)
+                  else:
+                      print(f"Request failed with status code {response.status_code}")
+              except requests.exceptions.RequestException as e:
+                  print(f"Request error: {e}")
+
+                  
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Hello from Lambda!')
+              }
+
+      Runtime: "python3.9"
+      VpcConfig:
+        SecurityGroupIds:
+          - !GetAtt OpenSecurityGroup.GroupId
+        SubnetIds:
+          - !Ref PrivateSubnet
+        Ipv6AllowedForDualStack: true
+      Layers:
+        - "arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-requests:17"
+
+Outputs:
+  VPCId:
+    Description: "VPC ID"
+    Value: !Ref MyVPC
+
+  PrivateSubnetId:
+    Description: "Private Subnet ID"
+    Value: !Ref PrivateSubnet
+
+  EgressOnlyInternetGatewayId:
+    Description: "Egress-Only Internet Gateway ID"
+    Value: !Ref EgressOnlyInternetGateway
+
+  PrivateRouteTableId:
+    Description: "Private Route Table ID"
+    Value: !Ref CustomPrivateRouteTable
+
+  SecurityGroupId:
+    Description: "Security Group ID"
+    Value: !GetAtt OpenSecurityGroup.GroupId
+
+  LambdaFunctionArn:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt LambdaFunction.Arn
